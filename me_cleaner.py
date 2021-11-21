@@ -604,11 +604,15 @@ if __name__ == "__main__":
             if mef.read(4) == b"$FPT":
                 fpt_offset = 0x10
             else:
-                if me_start > 0:
-                    sys.exit("The ME/TXE region is valid but the firmware is "
-                             "corrupted or missing")
+                mef.seek(0x1000)
+                if mef.read(4) == b"$FPT":
+                    fpt_offset = 0x1000
                 else:
-                    sys.exit("Unknown error")
+                    if me_start > 0:
+                        sys.exit("The ME/TXE region is valid but the firmware is "
+                                 "corrupted or missing")
+                    else:
+                        sys.exit("Unknown error")
 
     if gen == 1:
         end_addr = 0
@@ -624,7 +628,6 @@ if __name__ == "__main__":
 
         mef.seek(fpt_offset + 0x20)
         partitions = mef.read(entries * 0x20)
-
         ftpr_header = b""
 
         for i in range(entries):
@@ -633,15 +636,37 @@ if __name__ == "__main__":
                 break
 
         if ftpr_header == b"":
-            sys.exit("FTPR header not found, this image doesn't seem to be "
-                     "valid")
+            print("FTPR header not found, this image doesn't seem to be "
+                     "valid or signed, searching for $CPD...")
+
+            try:
+                class Success(Exception): pass
+                for offset in range(0x1000, 0x100000, 0x1000):
+                    ftpr_offset, ftpr_length = offset, 0
+                    mef.seek(ftpr_offset)
+                    if mef.read(4) == b"$CPD":
+                        print("Found $CPD: {:#x}".format(ftpr_offset))
+                        num_entries = unpack("<I", mef.read(4))[0]
+
+                        mef.seek(ftpr_offset + 0x10)
+
+                        for i in range(0, num_entries):
+                            data = mef.read(0x18)
+                            name = data[0x0:0xc].rstrip(b"\x00").decode("ascii")
+                            if name == "FTPR.man":
+                                print("Found FTPR.man")
+                                raise Success
+                sys.exit('FTPR.man not found')
+            except Success: pass
+        else:
+            ftpr_offset, ftpr_length = unpack("<II", ftpr_header[0x08:0x10])
 
         if ftpr_header[0x0:0x4] == b"CODE":
             gen = 1
 
-        ftpr_offset, ftpr_length = unpack("<II", ftpr_header[0x08:0x10])
         print("Found FTPR header: FTPR partition spans from {:#x} to {:#x}"
               .format(ftpr_offset, ftpr_offset + ftpr_length))
+
 
         mef.seek(ftpr_offset)
         if mef.read(4) == b"$CPD":
@@ -655,7 +680,6 @@ if __name__ == "__main__":
                 data = mef.read(0x18)
                 name = data[0x0:0xc].rstrip(b"\x00").decode("ascii")
                 offset = unpack("<I", data[0xc:0xf] + b"\x00")[0]
-
                 if name == "FTPR.man":
                     ftpr_mn2_offset = offset
                     break
