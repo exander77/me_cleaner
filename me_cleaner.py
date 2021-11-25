@@ -640,7 +640,7 @@ if __name__ == "__main__":
                      "valid or signed, searching for $CPD...")
 
             try:
-                class Success(Exception): pass
+                class Success(BaseException): pass
                 for offset in range(0x1000, 0x100000, 0x1000):
                     ftpr_offset, ftpr_length = offset, 0
                     mef.seek(ftpr_offset)
